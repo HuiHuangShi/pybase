@@ -7,16 +7,18 @@ import re
 #    column_range = [0,3]
 #    value = { var:"xxx"} notice:if excel the first line have '\n',it will remove it
 class XlsxIni:
-    def __assign_mandatory_attribute(self,attr,must_keys,config):
-        if attr in self.__dict__:
-            raise Exception("%s attr is already set" % attr)
-        self.__dict__[attr] = NameTuple(must_keys)
+    def __assign_mandatory_attribute(self,section,must_keys,config):
+        if section in self.__dict__:
+            raise Exception("%s section is already init" % section)
+        self.__dict__[section] = NameTuple([""])
+        self.__dict__[section].__dict__["raw"] = NameTuple(must_keys)
+        this_raw = self.__dict__[section].__dict__["raw"]
 
         for must in must_keys:
-            if must not in config[attr].keys():
-                raise Exception("%s is mandotary in %s section" % (must,attr))
+            if must not in config[section].keys():
+                raise Exception("%s is mandotary in %s section" % (must, section))
             else:
-                self.__dict__[attr].__dict__[must] = config[attr][must]
+                this_raw.__dict__[must] = config[section][must]
 
     def __is_key_word(self,word):
         for check_item in self.check_key_lst:
@@ -24,28 +26,38 @@ class XlsxIni:
                 return False
         return True
 
-    def __parse_core(self):
+    def __parse_section(self,section):
+        this_section = self.__dict__[section]
+        this_raw = self.__dict__[section].__dict__["raw"]
+
+        this_section.__dict__["column_range"] = None
+        this_section.__dict__["range_map"] = []
+        this_section.__dict__["struct"] = NameTuple([""])
+        this_section.__dict__["map"] = NameTuple([""])
+        this_section.__dict__["mandatory"] = []
+        this_section.__dict__["is_struct"] = False
+
         #parse column_range
-        self.key_range = self.__core_column_range_regex.findall(self.core.column_range)[0]
-        if "" in self.key_range or None in self.key_range:
-            raise Exception("column_range:%s format is incorrect" % self.key_range)
+        this_raw.key_range = self.__column_range_regex.findall(this_raw.column_range)[0]
+        if "" in this_raw.key_range or None in this_raw.key_range:
+            raise Exception("column_range:%s format is incorrect" % this_raw.key_range)
 
-        if self.key_range[0] == '(':
-            start = int(self.key_range[1]) + 1
+        if this_raw.key_range[0] == '(':
+            start = int(this_raw.key_range[1]) + 1
         else:
-            start = int(self.key_range[1])
+            start = int(this_raw.key_range[1])
 
-        if self.key_range[-1] == ')':
-            end = int(self.key_range[-2]) - 1
+        if this_raw.key_range[-1] == ')':
+            end = int(this_raw.key_range[-2]) - 1
         else:
-            end = int(self.key_range[-2])
+            end = int(this_raw.key_range[-2])
 
-        self.column_range = [start, end]
+        this_section.column_range = [start, end]
 
         #parse key_list
-        if self.core.key_list[0] != '[' or self.core.key_list[-1] != ']':
-            raise Exception("key_list:%s format is incorrect" % self.core.key_list)
-        key_lst = self.core.key_list[1:-1].split(",")
+        if this_raw.key_list[0] != '[' or this_raw.key_list[-1] != ']':
+            raise Exception("key_list:%s format is incorrect" % thie_raw.key_list)
+        key_lst = this_raw.key_list[1:-1].split(",")
 
         for key in key_lst:
             if key in [None,""]:
@@ -55,23 +67,23 @@ class XlsxIni:
                 raise Exception("key_list:%s format is incorrect" % key)
 
         #check key_list len is in the range of column_range
-        length = self.column_range[1] - self.column_range[0] + 1
+        length = this_section.column_range[1] - this_section.column_range[0] + 1
         if len(key_lst) != length:
             print("key_lst:%s" % key_lst)
             print("column_range:%s" % self.column_range)
             raise Exception("column_range and key_list is not match")
 
         i = 0
-        for idx in xrange(self.column_range[0],self.column_range[1] + 1):
-            self.range_map.append([idx,key_lst[i]])
-            if key_lst[i] in self.struct.__dict__:
+        for idx in xrange(this_section.column_range[0],this_section.column_range[1] + 1):
+            this_section.range_map.append([idx, key_lst[i]])
+            if key_lst[i] in this_section.struct.__dict__:
                 raise Exception("already have name:%s" % key_lst[i])
             else:
-                self.struct.__dict__[key_lst[i]] = idx
+                this_section.struct.__dict__[key_lst[i]] = idx
             i = i + 1
 
         #parse value_map
-        value_map = ''.join(self.core.value_map.split("\n")).strip()
+        value_map = ''.join(this_raw.value_map.split("\n")).strip()
         map_pairs = value_map[1:-1].split(",")
         if "" in map_pairs or None in map_pairs:
             raise Exception("value_map content is not correct,please check")
@@ -95,43 +107,38 @@ class XlsxIni:
             if raw_map_val[0] != '"' or raw_map_val[-1] != '"':
                     raise Exception("map_val:%s is incorrect format" % raw_map_val)
 
-            if raw_map_key in self.map.__dict__:
+            if raw_map_key in this_section.map.__dict__:
                 raise Exception("%s is already in map" % raw_map_key)
-            self.map.__dict__[raw_map_key] = raw_map_val
+            this_section.map.__dict__[raw_map_key] = raw_map_val
 
         #parse mandatory
-        mandatory_lst = self.core.mandatory.split(",")
+        mandatory_lst = this_raw.mandatory.split(",")
         for mandatory in mandatory_lst:
             if not self.__is_key_word(mandatory):
                 raise Exception("mandatory:%s is incorrect format" % mandatory)
-            if mandatory not in self.map.__dict__:
+            if mandatory not in this_section.map.__dict__:
                 raise Exception("mandatory:%s is not exist in value_map" % mandatory)
-            if mandatory not in self.mandatory:
-                self.mandatory.append(mandatory)
+            if mandatory not in this_section.mandatory:
+                this_section.mandatory.append(mandatory)
             else:
                 raise Exception("mandatory:%s is repeated" % mandatory)
 
         #parse is_structure
-        if self.core.is_structure not in ["yes","no"]:
+        if this_raw.is_structure not in ["yes","no"]:
             raise Exception("is_structure only have two pattern:yes/no")
+        if this_raw.is_structure == "yes":
+            this_section.is_struct = True
 
     def __init__(self,ini_file):
         self.conf = ConfigParser()
-        self.__core_column_range_regex = re.compile("^\s*(\(|\[)\s*(\d+)\s*(,)\s*(\d+)\s*(\)|\])")
-        self.struct = NameTuple(["default"])
-        self.map = NameTuple(["default"])
-        self.column_range = []
-        self.range_map = []
-        self.mandatory = []
-        self.check_key_lst = [" ","\n","\"","\'"]
-
+        self.__column_range_regex = re.compile("^\s*(\(|\[)\s*(\d+)\s*(,)\s*(\d+)\s*(\)|\])")
         self.conf.read(ini_file)
-        self.keys = self.conf.keys()
 
-        if "core" not in self.keys:
-            raise Exception("%s file not have core section")
+        self.check_key_lst = [" ","\n","\"","\'"]
+        self.sections = self.conf.sections()
 
-        core_must_keys = ["column_range","key_list",
+        self.must_keys = ["column_range","key_list",
                                "value_map","mandatory","is_structure"]
-        self.__assign_mandatory_attribute("core", core_must_keys, self.conf)
-        self.__parse_core()
+        for section in self.sections:
+            self.__assign_mandatory_attribute(section, self.must_keys, self.conf)
+            self.__parse_section(section)
